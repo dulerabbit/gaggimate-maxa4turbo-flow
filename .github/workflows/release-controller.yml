@@ -4,10 +4,18 @@ on:
   push:
     tags:
       - "maxa4turbo-flow-v*"
+    branches:
+      - main
   workflow_dispatch:
 
 permissions:
   contents: write
+  pages: write
+  id-token: write
+
+concurrency:
+  group: maxa4turbo-flow-controller
+  cancel-in-progress: true
 
 jobs:
   build-and-release:
@@ -34,19 +42,33 @@ jobs:
 
       - name: Build controller
         run: |
-          mkdir -p out
+          mkdir -p out/flasher
           pio run -e controller
           cp .pio/build/controller/firmware.bin out/board-firmware.bin
           cp .pio/build/controller/partitions.bin out/board-partitions.bin
           cp .pio/build/controller/bootloader.bin out/board-bootloader.bin
           git rev-parse --short HEAD > out/git-rev.txt
           echo "GM_MEASURED_FLOW=1 Digmesa EXT4/GPIO12" > out/NOTES.txt
+          # Web flasher bundle (GitHub Pages)
+          cp scripts/flasher/index.html out/flasher/index.html
+          cp scripts/flasher/manifest-controller.json out/flasher/manifest-controller.json
+          cp out/board-firmware.bin out/flasher/board-firmware.bin
+          cp out/board-partitions.bin out/flasher/board-partitions.bin
+          cp out/board-bootloader.bin out/flasher/board-bootloader.bin
+          cp out/git-rev.txt out/flasher/git-rev.txt
+          date -u +"%Y-%m-%dT%H:%M:%SZ" > out/flasher/built-at.txt
 
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
         with:
           name: maxa4turbo-flow-controller
-          path: out/*
+          path: |
+            out/board-firmware.bin
+            out/board-bootloader.bin
+            out/board-partitions.bin
+            out/NOTES.txt
+            out/git-rev.txt
+            out/flasher/**
 
       - name: Create GitHub Release
         if: startsWith(github.ref, 'refs/tags/')
@@ -56,7 +78,9 @@ jobs:
           body: |
             Community Digmesa measured-flow controller build (Pro EXT4 / GPIO12).
 
-            **Flash the Pro controller only** — do not replace display firmware.
+            **Easiest flash:** https://dulerabbit.github.io/gaggimate-maxa4turbo-flow/ (Chrome/Edge)
+
+            Or esptool — **Pro controller only**:
 
             ```
             esptool.py --chip esp32s3 write_flash \
@@ -65,7 +89,7 @@ jobs:
               0x10000 board-firmware.bin
             ```
 
-            See README for Digmesa wiring. Not an official GaggiMate release.
+            Not an official GaggiMate release.
           files: |
             out/board-firmware.bin
             out/board-bootloader.bin
@@ -74,3 +98,14 @@ jobs:
             out/git-rev.txt
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Deploy web flasher to GitHub Pages
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: out/flasher
+          publish_branch: gh-pages
+          force_orphan: true
+          user_name: github-actions[bot]
+          user_email: github-actions[bot]@users.noreply.github.com
+          commit_message: Deploy maxa4turbo Digmesa controller flasher

@@ -4,36 +4,15 @@ Community fork of [GaggiMate](https://github.com/jniebuhr/gaggimate) with **Digm
 
 **Not an official GaggiMate / Jochen release.** Built for [#bldc-pumps](https://discord.com) / maxA4turbo-style Digmesa setups.
 
-## What you flash
+## Flash (easiest)
 
-**Controller (Pro PCB) only.** Keep your existing display firmware if it already talks to current upstream GaggiMate.
+**Web flasher (Chrome / Edge):**  
+**https://dulerabbit.github.io/gaggimate-maxa4turbo-flow/**
 
-Download the latest **Release** assets:
-
-| File | Role |
-|------|------|
-| `board-bootloader.bin` | bootloader @ `0x0` |
-| `board-partitions.bin` | partition table @ `0x8000` |
-| `board-firmware.bin` | app @ `0x10000` |
-
-### Flash with esptool
-
-Put the Pro board in download mode (hold BOOT, tap RESET), then:
-
-```bash
-esptool.py --chip esp32s3 --port /dev/tty.usbmodem* write_flash \
-  0x0     board-bootloader.bin \
-  0x8000  board-partitions.bin \
-  0x10000 board-firmware.bin
-```
-
-(On Windows use `COM3` or similar instead of `/dev/tty…`.)
-
-You can also use PlatformIO from this repo:
-
-```bash
-pio run -e controller -t upload
-```
+1. Open that page on a desktop Chrome or Edge browser  
+2. Plug in the **Pro controller** USB  
+3. Click **Connect & Install**  
+4. Leave your **display** alone  
 
 ## Digmesa wiring
 
@@ -44,6 +23,25 @@ pio run -e controller -t upload
 | +V | 3.3–5 V |
 
 Add an external **pull-up to 3.3 V** (~1k–4.7k). Do **not** use EXT2 (I2C SCL), Velofuso TCA IO2, or GPIO14.
+
+## Alternate: Release bins + esptool
+
+Download assets from the latest [Release](https://github.com/dulerabbit/gaggimate-maxa4turbo-flow/releases):
+
+| File | Role |
+|------|------|
+| `board-bootloader.bin` | bootloader @ `0x0` |
+| `board-partitions.bin` | partition table @ `0x8000` |
+| `board-firmware.bin` | app @ `0x10000` |
+
+```bash
+esptool.py --chip esp32s3 --port /dev/tty.usbmodem* write_flash \
+  0x0     board-bootloader.bin \
+  0x8000  board-partitions.bin \
+  0x10000 board-firmware.bin
+```
+
+Or from source: `pio run -e controller -t upload`
 
 ## Behaviour
 
