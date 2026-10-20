@@ -35,6 +35,9 @@ class DimmedPump : public Pump {
     void setPumpFlowPolyCoeffs(float a, float b, float c, float d);
     void setPumpSlipPolyCoeffs(float a, float b, float c, float d);
     void setGains(float commutationGain, float convergenceGain, float integralGain);
+    // Optional Digmesa / pulse-meter ml/s. When set, FLOW mode uses measured PI (not pump model).
+    void setMeasuredFlowPtr(float *measuredFlowMlPerS);
+    void setMeasuredFlowGains(float kp, float ki);
     void stop();
     void fullPower();
     void setValveState(bool open);

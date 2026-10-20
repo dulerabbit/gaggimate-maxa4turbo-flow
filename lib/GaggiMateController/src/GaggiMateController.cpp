@@ -150,6 +150,15 @@ void GaggiMateController::setup() {
         this->gearpumpAddon->setup(this->pump->getPumpPowerPtr());
         auto dimmedPump = static_cast<DimmedPump *>(pump);
         dimmedPump->setBinaryMode(true);
+#if defined(GM_MEASURED_FLOW) && GM_MEASURED_FLOW
+        // Digmesa (or other OC pulse meter) on Pro EXT4 / GPIO12 — closed-loop measured flow.
+        if (flowSensor == nullptr) {
+            flowSensor = new FlowSensor(_config.ext4Pin);
+            flowSensor->setup();
+            dimmedPump->setMeasuredFlowPtr(flowSensor->getFlowPtr());
+            ESP_LOGI(LOG_TAG, "GM_MEASURED_FLOW: FlowSensor on EXT4 (GPIO %u)", _config.ext4Pin);
+        }
+#endif
     }
     if (_config.capabilites.pressure || _config.capabilites.dualBoiler) {
         pressureSensor->setup();
@@ -323,6 +332,9 @@ void GaggiMateController::setup() {
         if (hardwareScale != nullptr && hardwareScale->isAvailable()) {
             hardwareScale->tare();
         }
+        if (flowSensor != nullptr) {
+            flowSensor->tare();
+        }
         if (!_config.capabilites.dimming) {
             return;
         }
@@ -492,7 +504,14 @@ void GaggiMateController::sendSensorData() {
             pumpFlow = dimmedPump->getPumpFlow();
             puckResistance = dimmedPump->getPuckResistance();
             waterPumped = dimmedPump->getPumpedWater();
-            if (this->valve->getState()) {
+            if (flowSensor != nullptr) {
+                // Prefer Digmesa for pump_flow / pumped volume / volumetric when present.
+                pumpFlow = flowSensor->getFlow();
+                waterPumped = flowSensor->getVolume();
+                if (this->valve->getState()) {
+                    batch[n++] = _comms.buildVolumetricMeasurement(flowSensor->getVolume());
+                }
+            } else if (this->valve->getState()) {
                 batch[n++] = _comms.buildVolumetricMeasurement(dimmedPump->getCoffeeVolume());
             }
         }

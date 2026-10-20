@@ -1,59 +1,64 @@
-<p align="center">
-<img src="docs/assets/logo.png" alt="Logo" width="250px" />
-<br />
-  
-[![](https://dcbadge.vercel.app/api/server/APw7rgPGPf)](https://discord.gg/APw7rgPGPf)
-[![CC BY-NC-SA 4.0][cc-by-nc-sa-shield]][cc-by-nc-sa]
-[![Sonar QG][sonar-shield]][sonar-url]
-[![Sonar Violations][sonar-violations]][sonar-url]
-[![Sonar Tech Debt][sonar-tech-debt]][sonar-url]
+# gaggimate-maxa4turbo-flow
 
+Community fork of [GaggiMate](https://github.com/jniebuhr/gaggimate) with **Digmesa measured-flow closed-loop** for Pro + Velofuso.
 
-</p>
+**Not an official GaggiMate / Jochen release.** Built for [#bldc-pumps](https://discord.com) / maxA4turbo-style Digmesa setups.
 
-This project upgrades a Gaggia espresso machine with smart controls to improve your coffee-making experience. By adding a display and custom electronics, you can monitor and control the machine more easily.
+## What you flash
 
-<img src="docs/assets/gaggimate_poster.jpg" alt="Gaggia Classic Installation" width="500" />
+**Controller (Pro PCB) only.** Keep your existing display firmware if it already talks to current upstream GaggiMate.
 
-## Features
+Download the latest **Release** assets:
 
-- **Temperature Control**: Monitor the boiler temperature to ensure optimal brewing conditions.
-- **Brew timer**: Set a target duration and run the brewing for the specific time.
-- **Steam and Hot Water mode**: Control the pump and valve to run the respective task.
-- **Safety Features**: Automatic shutoff if the system becomes unresponsive or overheats.
-- **User Interface**: Simple, intuitive display to control and monitor the machine.
+| File | Role |
+|------|------|
+| `board-bootloader.bin` | bootloader @ `0x0` |
+| `board-partitions.bin` | partition table @ `0x8000` |
+| `board-firmware.bin` | app @ `0x10000` |
 
-## Screenshots and Images
+### Flash with esptool
 
-<img src="docs/assets/standby-screen.png" alt="Standby Screen" width="300px" />
-<img src="docs/assets/brew-screen.png" alt="Brew Screen" width="300px" />
-<img src="docs/assets/pcb_render.png" alt="PCB Render" width="300px" />
+Put the Pro board in download mode (hold BOOT, tap RESET), then:
 
-### How to buy
+```bash
+esptool.py --chip esp32s3 --port /dev/tty.usbmodem* write_flash \
+  0x0     board-bootloader.bin \
+  0x8000  board-partitions.bin \
+  0x10000 board-firmware.bin
+```
 
-You can buy your kit on https://shop.gaggimate.eu/
+(On Windows use `COM3` or similar instead of `/dev/tty…`.)
 
-## How It Works
+You can also use PlatformIO from this repo:
 
-The display allows you to control the espresso machine and see live temperature updates. If the machine becomes unresponsive or the temperature goes too high, it will automatically turn off for safety.
+```bash
+pio run -e controller -t upload
+```
 
-## Docs
+## Digmesa wiring
 
-The docs were moved to [https://gaggimate.eu/](https://gaggimate.eu/). You can find all sourcing and assembly information there.
-Additional documentation for the WebSocket API can be found in [docs/websocket-api.yaml](docs/websocket-api.yaml).
+| Digmesa | Pro header |
+|---------|------------|
+| Signal (open collector) | **EXT4 → GPIO12** |
+| GND | GND |
+| +V | 3.3–5 V |
 
-## Hardware Files
+Add an external **pull-up to 3.3 V** (~1k–4.7k). Do **not** use EXT2 (I2C SCL), Velofuso TCA IO2, or GPIO14.
 
-The hardware files were moved to [gaggimate/parts](https://github.com/gaggimate/parts).
+## Behaviour
+
+- When Velofuso (TCA @ `0x26`) is detected and `GM_MEASURED_FLOW=1` (default in this fork’s `controller` env), FLOW mode runs a **PI on measured ml/s**.
+- Pressure target in the same command is still a **ceiling** (`min(flowPI, pressureDuty)`).
+- Telemetry `pump_flow` / volumetric come from the meter.
+- Digmesa 1.2 mm default K-factor ≈ **31 100 pulses/L** (`0.03215 ml/pulse`). Tune in `FlowSensor.h` if needed.
+
+Stock model path: build `-e controller-stock` (`GM_MEASURED_FLOW=0`).
+
+## Source base
+
+- Upstream: `jniebuhr/gaggimate` `master`
+- Patch: Digmesa measured-flow PI on Pro EXT4
 
 ## License
 
-This work is licensed under CC BY-NC-SA 4.0. To view a copy of this license, visit https://creativecommons.org/licenses/by-nc-sa/4.0/
-
-[sonar-violations]: https://img.shields.io/sonar/blocker_violations/jniebuhr_gaggimate?server=https%3A%2F%2Fsonarcloud.io&style=for-the-badge
-[sonar-shield]: https://img.shields.io/sonar/quality_gate/jniebuhr_gaggimate?server=https%3A%2F%2Fsonarcloud.io&style=for-the-badge
-[sonar-tech-debt]: https://img.shields.io/sonar/tech_debt/jniebuhr_gaggimate?server=https%3A%2F%2Fsonarcloud.io&style=for-the-badge
-[sonar-url]: https://sonarcloud.io/project/overview?id=jniebuhr_gaggimate
-[cc-by-nc-sa]: http://creativecommons.org/licenses/by-nc-sa/4.0/
-[cc-by-nc-sa-image]: https://licensebuttons.net/l/by-nc-sa/4.0/88x31.png
-[cc-by-nc-sa-shield]: https://img.shields.io/badge/License-CC%20BY--NC--SA%204.0-lightgrey.svg?style=for-the-badge
+Same as upstream GaggiMate.

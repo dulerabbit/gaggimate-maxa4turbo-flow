@@ -72,7 +72,12 @@ void PressureController::update(ControlMode mode, bool freshPressure, float samp
         float pressureOutput = getPumpDutyCycleForPressure();
         *_ctrlOutput = std::min(flowOutput, pressureOutput);
         if (flowOutput < pressureOutput) {
-            _errorIntegral = 0.0f; // Reset error buildup in flow target
+            _errorIntegral = 0.0f; // Pressure loop not active; don't wind pressure integral
+        } else if (_measuredFlow != nullptr && pressureOutput < flowOutput) {
+            // Pressure ceiling won: undo last measured-flow integral step (clamp only, no reset).
+            const float measured = *_measuredFlow;
+            const float err = *_rawFlowSetpoint - measured;
+            _flowErrorIntegral -= err * _dt;
         }
     } else if (mode == ControlMode::FLOW) {
         *_ctrlOutput = getPumpDutyCycleForFlowRate();
@@ -112,7 +117,10 @@ float PressureController::getSlip() const {
 // Full-drive curve is the duty=1 slice (Q_geo - slip), so Q_geo = full-drive + slip.
 float PressureController::getGeometricFlow() const { return getAvailableFlow() + getSlip(); }
 
-float PressureController::getPumpDutyCycleForFlowRate() const {
+float PressureController::getPumpDutyCycleForFlowRate() {
+    if (_measuredFlow != nullptr) {
+        return getPumpDutyCycleForMeasuredFlow();
+    }
     if (*_rawFlowSetpoint <= 0.0f) {
         return 0.0f;
     }
@@ -123,6 +131,45 @@ float PressureController::getPumpDutyCycleForFlowRate() const {
     // Feedforward duty to hit the target flow, accounting for slip (incl. Q_t = 0 hold duty).
     float duty = ((*_rawFlowSetpoint + getSlip()) / geometricFlow) * 100.0f;
     return std::clamp(duty, 0.0f, 100.0f);
+}
+
+void PressureController::setMeasuredFlowPtr(float *measuredFlowMlPerS) {
+    _measuredFlow = measuredFlowMlPerS;
+    _flowErrorIntegral = 0.0f;
+    _lastMeasuredFlowDuty = 0.0f;
+}
+
+void PressureController::setMeasuredFlowGains(float kp, float ki) {
+    _flowKp = kp;
+    _flowKi = ki;
+}
+
+float PressureController::getPumpDutyCycleForMeasuredFlow() {
+    if (*_rawFlowSetpoint <= 0.0f) {
+        _flowErrorIntegral = 0.0f;
+        _lastMeasuredFlowDuty = 0.0f;
+        return 0.0f;
+    }
+    const float measured = (_measuredFlow != nullptr) ? *_measuredFlow : 0.0f;
+    const float err = *_rawFlowSetpoint - measured;
+    _flowErrorIntegral += err * _dt;
+
+    // Anti-windup: freeze integral when saturated in the wrong direction.
+    float unsaturated = _flowKp * err + _flowKi * _flowErrorIntegral;
+    if (unsaturated > 100.0f) {
+        unsaturated = 100.0f;
+        if (err > 0.0f) {
+            _flowErrorIntegral -= err * _dt;
+        }
+    } else if (unsaturated < 0.0f) {
+        unsaturated = 0.0f;
+        if (err < 0.0f) {
+            _flowErrorIntegral -= err * _dt;
+        }
+    }
+
+    _lastMeasuredFlowDuty = unsaturated;
+    return _lastMeasuredFlowDuty;
 }
 
 void PressureController::setPumpFlowCoeff(float oneBarFlow, float nineBarFlow) {
@@ -162,6 +209,8 @@ void PressureController::tare() {
     _puckState[2] = false;
     _puckCounter = 0;
     _pumpFlowRate = 0.0f;
+    _flowErrorIntegral = 0.0f;
+    _lastMeasuredFlowDuty = 0.0f;
     // IIR-filtered accumulators: unreset, these carry a shot's end-of-brew
     // depressurization transient into the next shot's puck-conductance-
     // derivative arming signature, suppressing arming — GH #839.
@@ -175,7 +224,9 @@ void PressureController::tare() {
 }
 
 void PressureController::virtualScale() {
-    float newPumpFlowRate = pumpFlowModel(*_ctrlOutput);
+    // Prefer measured ml/s when a pulse meter is wired; otherwise keep the pump model.
+    float newPumpFlowRate =
+        (_measuredFlow != nullptr) ? std::fmax(0.0f, *_measuredFlow) : pumpFlowModel(*_ctrlOutput);
     applyLowPassFilter(&_pumpFlowRate, newPumpFlowRate, _filterEstimatorFrequency, _dt);
     _pumpVolume += _pumpFlowRate * _dt;
     applyLowPassFilter(&exportPumpFlowRate, newPumpFlowRate, _filterEstimatorFrequency / 2, _dt);
@@ -318,6 +369,8 @@ float PressureController::getPumpDutyCycleForPressure() {
 void PressureController::reset() {
     initSetpointFilter(_filteredPressureSensor);
     _errorIntegral = 0.0f;
+    _flowErrorIntegral = 0.0f;
+    _lastMeasuredFlowDuty = 0.0f;
     _pumpFlowRate = 0.0f;
     _puckSaturationVolume = 0.0f;
     _puckState[0] = false;

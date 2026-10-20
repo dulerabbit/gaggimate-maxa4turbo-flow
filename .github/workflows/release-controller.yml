@@ -1,0 +1,76 @@
+name: Release controller firmware
+
+on:
+  push:
+    tags:
+      - "maxa4turbo-flow-v*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/pip
+            ~/.platformio/.cache
+          key: ${{ runner.os }}-pio-controller
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install PlatformIO
+        run: pip install --upgrade platformio
+
+      - name: Build controller
+        run: |
+          mkdir -p out
+          pio run -e controller
+          cp .pio/build/controller/firmware.bin out/board-firmware.bin
+          cp .pio/build/controller/partitions.bin out/board-partitions.bin
+          cp .pio/build/controller/bootloader.bin out/board-bootloader.bin
+          git rev-parse --short HEAD > out/git-rev.txt
+          echo "GM_MEASURED_FLOW=1 Digmesa EXT4/GPIO12" > out/NOTES.txt
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: maxa4turbo-flow-controller
+          path: out/*
+
+      - name: Create GitHub Release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          name: ${{ github.ref_name }}
+          body: |
+            Community Digmesa measured-flow controller build (Pro EXT4 / GPIO12).
+
+            **Flash the Pro controller only** — do not replace display firmware.
+
+            ```
+            esptool.py --chip esp32s3 write_flash \
+              0x0     board-bootloader.bin \
+              0x8000  board-partitions.bin \
+              0x10000 board-firmware.bin
+            ```
+
+            See README for Digmesa wiring. Not an official GaggiMate release.
+          files: |
+            out/board-firmware.bin
+            out/board-bootloader.bin
+            out/board-partitions.bin
+            out/NOTES.txt
+            out/git-rev.txt
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

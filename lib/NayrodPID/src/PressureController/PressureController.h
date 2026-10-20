@@ -33,6 +33,9 @@ class PressureController {
     // Rotary-vane slip polynomial (gear pump only); default zero -> no effect.
     void setPumpSlipPolyCoeffs(float a, float b, float c, float d);
     void setGains(float commutationGain, float convergenceGain, float integralGain);
+    // When non-null, FLOW mode uses a PI on this measured ml/s instead of the pump model.
+    void setMeasuredFlowPtr(float *measuredFlowMlPerS);
+    void setMeasuredFlowGains(float kp, float ki);
     float getPumpFlowRate() { return exportPumpFlowRate; };
     float getCoffeeFlowRate() { return *_valveStatus == 1 ? _coffeeFlowRate : 0.0f; };
     float getPuckResistance() { return _puckResistance; }
@@ -49,7 +52,8 @@ class PressureController {
     float getAvailableFlow() const;
     float getSlip() const;          // Vane-pump internal leakage at current pressure (ml/s)
     float getGeometricFlow() const; // Full geometric flow Q_geo = full-drive curve + slip
-    float getPumpDutyCycleForFlowRate() const;
+    float getPumpDutyCycleForFlowRate();
+    float getPumpDutyCycleForMeasuredFlow();
 
     float _dt = 1.0f; // Controller sampling period (seconds)
 
@@ -90,6 +94,13 @@ class PressureController {
     float _previousPressure = 0.0f; // Previous pressure reading (bar)
     float _errorIntegral = 0.0f;    // Integral of pressure error
     float _pumpDutyCycle = 0.0f;    // Calculated pump duty cycle (0-100%)
+
+    // === Measured-flow PI (Digmesa / external pulse meter) ===
+    float *_measuredFlow = nullptr;
+    float _flowErrorIntegral = 0.0f;
+    float _flowKp = 8.0f;  // % power per (ml/s) error — conservative starter
+    float _flowKi = 4.0f;  // % power per (ml/s)*s — conservative starter
+    float _lastMeasuredFlowDuty = 0.0f;
 
     // === Flow estimation ===
     float _waterThroughPuckFlowRate = 0.0f; // Water through puck flow rate (ml/s)

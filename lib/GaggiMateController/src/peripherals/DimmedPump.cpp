@@ -118,3 +118,11 @@ void DimmedPump::setPumpSlipPolyCoeffs(float a, float b, float c, float d) {
 void DimmedPump::setGains(float commutationGain, float convergenceGain, float integralGain) {
     _pressureController.setGains(commutationGain, convergenceGain, integralGain);
 }
+
+void DimmedPump::setMeasuredFlowPtr(float *measuredFlowMlPerS) {
+    _pressureController.setMeasuredFlowPtr(measuredFlowMlPerS);
+}
+
+void DimmedPump::setMeasuredFlowGains(float kp, float ki) {
+    _pressureController.setMeasuredFlowGains(kp, ki);
+}
